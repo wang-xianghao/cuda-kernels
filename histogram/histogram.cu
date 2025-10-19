@@ -3,9 +3,10 @@
 #include "common_utils.hpp"
 
 std::default_random_engine generator(69);
-constexpr unsigned int ALPHABET_LENGTH = 26;
+constexpr int ALPHABET_LENGTH = 26;
 
-__global__ void histogram_kernel(const char *data, unsigned int length, unsigned int *histo)
+template <int BLOCK_SIZE>
+__global__ void histogram_kernel(const char *data, int length, int *histo)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -16,17 +17,17 @@ __global__ void histogram_kernel(const char *data, unsigned int length, unsigned
     }
 }
 
-void histogram(const char *data, unsigned int length, unsigned int *histo)
+void histogram(const char *data, int length, int *histo)
 {
     constexpr int BLOCK_SIZE = 1024;
     dim3 blockDim(BLOCK_SIZE);
     dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE));
 
-    histogram_kernel<<<gridDim, blockDim>>>(data, length, histo);
+    histogram_kernel<BLOCK_SIZE><<<gridDim, blockDim>>>(data, length, histo);
     CHECK_LAST_CUDA_ERROR();
 }
 
-void initialize_data(char *data, unsigned int length)
+void initialize_data(char *data, int length)
 {
     std::uniform_int_distribution<> distrib(0, 25);
     for (int i = 0; i < length; ++i)
@@ -37,27 +38,27 @@ void initialize_data(char *data, unsigned int length)
 
 int main()
 {
-    constexpr unsigned int length = 1024 * 1024 * 1024;
+    constexpr int length = 1024 * 1024 * 1024;
     constexpr int num_repeats = 8;
 
     // Allocate and initialize host data
     char *data_host;
-    unsigned int *histo_host;
+    int *histo_host;
     CHECK_CUDA_ERROR(cudaMallocHost(&data_host, length * sizeof(char)));
-    CHECK_CUDA_ERROR(cudaMallocHost(&histo_host, ALPHABET_LENGTH * sizeof(unsigned int)));
+    CHECK_CUDA_ERROR(cudaMallocHost(&histo_host, ALPHABET_LENGTH * sizeof(int)));
     initialize_data(data_host, length);
 
     // Copy data to device
     char *data_device;
-    unsigned int *histo_device;
+    int *histo_device;
     CHECK_CUDA_ERROR(cudaMalloc(&data_device, length * sizeof(char)));
-    CHECK_CUDA_ERROR(cudaMalloc(&histo_device, ALPHABET_LENGTH * sizeof(unsigned int)));
+    CHECK_CUDA_ERROR(cudaMalloc(&histo_device, ALPHABET_LENGTH * sizeof(int)));
     CHECK_CUDA_ERROR(cudaMemcpy(data_device, data_host, length * sizeof(char), cudaMemcpyHostToDevice));
 
     // Run and check results
     histogram(data_device, length, histo_device);
     CHECK_CUDA_ERROR(cudaDeviceSynchronize());
-    CHECK_CUDA_ERROR(cudaMemcpy(histo_host, histo_device, ALPHABET_LENGTH * sizeof(unsigned int), cudaMemcpyDeviceToHost));
+    CHECK_CUDA_ERROR(cudaMemcpy(histo_host, histo_device, ALPHABET_LENGTH * sizeof(int), cudaMemcpyDeviceToHost));
     for (int i = 0; i < ALPHABET_LENGTH; ++i)
     {
         printf("%c(%6.3f%) ", i + 'a', 100 * static_cast<float>(histo_host[i]) / length);
