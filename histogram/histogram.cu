@@ -5,15 +5,29 @@
 std::default_random_engine generator(69);
 constexpr int ALPHABET_LENGTH = 26;
 
-template <int BLOCK_SIZE>
 __global__ void histogram_kernel(const char *data, int length, int *histo)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
+    __shared__ int histo_private[ALPHABET_LENGTH];
+
+    for (int i = threadIdx.x; i < ALPHABET_LENGTH; i += blockDim.x)
+    {
+        histo_private[i] = 0;
+    }
+    __syncthreads();
+
     if (idx < length)
     {
         int cid = data[idx] - 'a';
-        atomicAdd(histo + cid, 1);
+        atomicAdd(histo_private + cid, 1);
+    }
+    __syncthreads();
+
+    for (int i = threadIdx.x; i < ALPHABET_LENGTH; i += blockDim.x)
+    {
+        int cnt = histo_private[i];
+        atomicAdd(histo + i, cnt);
     }
 }
 
@@ -23,7 +37,7 @@ void histogram(const char *data, int length, int *histo)
     dim3 blockDim(BLOCK_SIZE);
     dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE));
 
-    histogram_kernel<BLOCK_SIZE><<<gridDim, blockDim>>>(data, length, histo);
+    histogram_kernel<<<gridDim, blockDim>>>(data, length, histo);
     CHECK_LAST_CUDA_ERROR();
 }
 
