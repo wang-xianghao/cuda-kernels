@@ -19,6 +19,11 @@ __global__ void histogram_kernel(const char *data, int length, int *histo)
     }
     __syncthreads();
 
+    // Although using BLOCK_PATTERN naturally results in coalesced memory access,
+    // a warp only reads 32bytes in a coalesced load since the data is char (1 byte),
+    // which cannot fully utilize the global memory bandwidth.
+    // Instead, the other pattern's loop can be unrollled by a factor of NUM_ITERS,
+    // which yileds larger chunk of coelesced loads.
 #ifdef BLOCK_PATTERN
     int idx = blockIdx.x * blockDim.x * NUM_ITERS + threadIdx.x;
     for (int i = idx; i < min(length, idx + NUM_ITERS * blockDim.x); i += blockDim.x)
