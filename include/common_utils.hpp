@@ -4,6 +4,7 @@
 #include <cuda_runtime.h>
 #include <functional>
 #include <iostream>
+#include <vector>
 
 #define CEIL_DIV(a, b) (((a) + (b) - 1) / (b))
 
@@ -33,10 +34,26 @@ void check_cuda_last(const char *const file, const int line)
     }
 }
 
+void clear_cache()
+{
+    static int l2_size = 0;
+    static unsigned char *tmp_data{nullptr};
+
+    if (tmp_data == nullptr)
+    {
+        CHECK_CUDA_ERROR(cudaDeviceGetAttribute(&l2_size, cudaDevAttrL2CacheSize, 0));
+        l2_size *= 2;
+        CHECK_CUDA_ERROR(cudaMalloc(&tmp_data, l2_size));
+    }
+
+    CHECK_CUDA_ERROR(cudaMemset(tmp_data, 0, l2_size));
+}
+
 float measure_latency(std::function<void(cudaStream_t)> bound_function,
                       int num_repeats, cudaStream_t stream = 0)
 {
     float latency;
+    std::vector<float> latencies;
 
     // Create events
     cudaEvent_t start, stop;
@@ -44,14 +61,19 @@ float measure_latency(std::function<void(cudaStream_t)> bound_function,
     CHECK_CUDA_ERROR(cudaEventCreate(&stop));
 
     // Measure latency
-    CHECK_CUDA_ERROR(cudaEventRecord(start, stream));
     for (int i = 0; i < num_repeats; ++i)
     {
+        clear_cache();
+        CHECK_CUDA_ERROR(cudaEventRecord(start, stream));
         bound_function(stream);
+        CHECK_CUDA_ERROR(cudaEventRecord(stop, stream));
+        CHECK_CUDA_ERROR(cudaEventSynchronize(stop));
+        CHECK_CUDA_ERROR(cudaEventElapsedTime(&latency, start, stop));
+        latencies.push_back(latency);
     }
-    CHECK_CUDA_ERROR(cudaEventRecord(stop, stream));
-    CHECK_CUDA_ERROR(cudaEventSynchronize(stop));
-    CHECK_CUDA_ERROR(cudaEventElapsedTime(&latency, start, stop));
+
+    // Calculate total latency
+    latency = std::reduce(latencies.begin(), latencies.end());
 
     // Destroy events
     CHECK_CUDA_ERROR(cudaEventDestroy(start));
