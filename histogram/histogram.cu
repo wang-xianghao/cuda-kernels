@@ -33,7 +33,10 @@ __global__ void histogram_kernel(const char *data, int length, int *histo)
 
 void histogram(const char *data, int length, int *histo)
 {
-    constexpr int BLOCK_SIZE = 1024;
+    // BLOCK_SIZE is a tradeoff between occupancy and stalling due to atomic operations
+    //      - small: better occupancy
+    //      - large: fewer atomic operations on slow global memory
+    constexpr int BLOCK_SIZE = 512;
     dim3 blockDim(BLOCK_SIZE);
     dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE));
 
