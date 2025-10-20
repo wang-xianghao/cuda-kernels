@@ -2,12 +2,15 @@
 #include <random>
 #include "common_utils.hpp"
 
+#define BLOCK_PATTERN
+
 std::default_random_engine generator(69);
 constexpr int ALPHABET_LENGTH = 26;
 
+template <int NUM_ITERS>
 __global__ void histogram_kernel(const char *data, int length, int *histo)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int idx = blockIdx.x * blockDim.x * NUM_ITERS + threadIdx.x;
 
     __shared__ int histo_private[ALPHABET_LENGTH];
 
@@ -17,11 +20,16 @@ __global__ void histogram_kernel(const char *data, int length, int *histo)
     }
     __syncthreads();
 
-    if (idx < length)
+#ifdef BLOCK_PATTERN
+    for (int i = idx; i < min(length, idx + NUM_ITERS * blockDim.x); i += blockDim.x)
     {
-        int cid = data[idx] - 'a';
+        int cid = data[i] - 'a';
         atomicAdd(histo_private + cid, 1);
     }
+#else
+
+#endif
+
     __syncthreads();
 
     for (int i = threadIdx.x; i < ALPHABET_LENGTH; i += blockDim.x)
@@ -36,11 +44,13 @@ void histogram(const char *data, int length, int *histo)
     // BLOCK_SIZE is a tradeoff between occupancy and stalling due to atomic operations
     //      - small: better occupancy
     //      - large: fewer atomic operations on slow global memory
+    // We could achieve both advantages by coarsening.
     constexpr int BLOCK_SIZE = 512;
+    constexpr int NUM_ITERS = 16;
     dim3 blockDim(BLOCK_SIZE);
-    dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE));
+    dim3 gridDim(CEIL_DIV(length, NUM_ITERS * BLOCK_SIZE));
 
-    histogram_kernel<<<gridDim, blockDim>>>(data, length, histo);
+    histogram_kernel<NUM_ITERS><<<gridDim, blockDim>>>(data, length, histo);
     CHECK_LAST_CUDA_ERROR();
 }
 
