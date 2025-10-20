@@ -2,7 +2,7 @@
 #include <random>
 #include "common_utils.hpp"
 
-#define BLOCK_PATTERN
+// #define BLOCK_PATTERN
 
 std::default_random_engine generator(69);
 constexpr int ALPHABET_LENGTH = 26;
@@ -10,7 +10,6 @@ constexpr int ALPHABET_LENGTH = 26;
 template <int NUM_ITERS>
 __global__ void histogram_kernel(const char *data, int length, int *histo)
 {
-    int idx = blockIdx.x * blockDim.x * NUM_ITERS + threadIdx.x;
 
     __shared__ int histo_private[ALPHABET_LENGTH];
 
@@ -21,13 +20,19 @@ __global__ void histogram_kernel(const char *data, int length, int *histo)
     __syncthreads();
 
 #ifdef BLOCK_PATTERN
+    int idx = blockIdx.x * blockDim.x * NUM_ITERS + threadIdx.x;
     for (int i = idx; i < min(length, idx + NUM_ITERS * blockDim.x); i += blockDim.x)
     {
         int cid = data[i] - 'a';
         atomicAdd(histo_private + cid, 1);
     }
 #else
-
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    for (int i = NUM_ITERS * idx; i < min(length, (idx + 1) * NUM_ITERS); i += 1)
+    {
+        int cid = data[i] - 'a';
+        atomicAdd(histo_private + cid, 1);
+    }
 #endif
 
     __syncthreads();
@@ -46,7 +51,7 @@ void histogram(const char *data, int length, int *histo)
     //      - large: fewer atomic operations on slow global memory
     // We could achieve both advantages by coarsening.
     constexpr int BLOCK_SIZE = 512;
-    constexpr int NUM_ITERS = 16;
+    constexpr int NUM_ITERS = 8;
     dim3 blockDim(BLOCK_SIZE);
     dim3 gridDim(CEIL_DIV(length, NUM_ITERS * BLOCK_SIZE));
 
