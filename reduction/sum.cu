@@ -4,24 +4,33 @@
 
 std::default_random_engine generator(114514);
 
-__global__ void sum_kernel(const float *input, int length, float *output)
+template <int BLOCK_SIZE>
+__global__ void sum_kernel(float *input, int length, float *output)
 {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int tid = threadIdx.x;
 
-    if (tid < length)
+    for (int stride = BLOCK_SIZE; stride > 0; stride /= 2)
     {
-        float x = input[tid];
-        atomicAdd(output, x);
+        if (tid < stride)
+        {
+            input[tid] = input[tid] + input[tid + stride];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0)
+    {
+        *output = input[0];
     }
 }
 
-void sum(const float *input, int length, float *output)
+void sum(float *input, int length, float *output)
 {
-    constexpr int BLOCK_SIZE = 512;
+    constexpr int BLOCK_SIZE = 1024;
 
     dim3 blockDim(BLOCK_SIZE);
-    dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE));
-    sum_kernel<<<gridDim, blockDim>>>(input, length, output);
+    dim3 gridDim(1);
+    sum_kernel<BLOCK_SIZE><<<gridDim, blockDim>>>(input, length, output);
     CHECK_LAST_CUDA_ERROR();
 }
 
@@ -39,7 +48,7 @@ float initialize_data(float *input, int length)
 
 int main()
 {
-    constexpr int length = 1024 * 1024 * 1024;
+    constexpr int length = 2048;
     constexpr int num_repeats = 8;
 
     // Alloate and initialize data on host
