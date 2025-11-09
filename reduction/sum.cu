@@ -13,9 +13,9 @@ __global__ void sum_kernel(float *input, int length, float *output)
     __shared__ float sums[BLOCK_SIZE];
 
     // Store the pair sum to shared memory
-    int own_value = idx < length ? input[idx] : 0.0f;
+    float own_value = idx < length ? input[idx] : 0.0f;
     int partner_idx = idx + BLOCK_SIZE;
-    int partner_value = partner_idx < length ? input[partner_idx] : 0.0f;
+    float partner_value = partner_idx < length ? input[partner_idx] : 0.0f;
     sums[local_idx] = own_value + partner_value;
 
     for (int stride = BLOCK_SIZE / 2; stride > 0; stride /= 2)
@@ -46,10 +46,10 @@ void sum(float *input, int length, float *output)
 float initialize_data(float *input, int length)
 {
     float sum = 0.0f;
-    std::uniform_int_distribution<int> distrib(0, 5);
+    std::uniform_real_distribution<float> distrib(-1.0f, 1.0f);
     for (int i = 0; i < length; ++i)
     {
-        input[i] = static_cast<float>(distrib(generator));
+        input[i] = distrib(generator);
         sum += input[i];
     }
     return sum;
@@ -57,7 +57,7 @@ float initialize_data(float *input, int length)
 
 int main()
 {
-    constexpr int length = 1024 * 1024 * 2;
+    constexpr int length = 1024 * 1024 * 1024;
     constexpr int num_repeats = 8;
 
     // Alloate and initialize data on host
