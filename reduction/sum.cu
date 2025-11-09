@@ -38,7 +38,7 @@ void sum(float *input, int length, float *output)
     constexpr int BLOCK_SIZE = 1024;
 
     dim3 blockDim(BLOCK_SIZE);
-    dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE));
+    dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE * 2));
     sum_kernel<BLOCK_SIZE><<<gridDim, blockDim>>>(input, length, output);
     CHECK_LAST_CUDA_ERROR();
 }
