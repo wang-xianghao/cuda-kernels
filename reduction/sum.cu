@@ -9,18 +9,23 @@ __global__ void sum_kernel(float *input, int length, float *output)
 {
     int tid = threadIdx.x;
 
-    for (int stride = BLOCK_SIZE; stride > 0; stride /= 2)
+    __shared__ float sums[BLOCK_SIZE];
+
+    // Store all the local results to shared memory
+    sums[tid] = input[tid] + input[tid + BLOCK_SIZE];
+
+    for (int stride = BLOCK_SIZE / 2; stride > 0; stride /= 2)
     {
+        __syncthreads();
         if (tid < stride)
         {
-            input[tid] = input[tid] + input[tid + stride];
+            sums[tid] = sums[tid] + sums[tid + stride];
         }
-        __syncthreads();
     }
 
     if (tid == 0)
     {
-        *output = input[0];
+        *output = sums[0];
     }
 }
 
