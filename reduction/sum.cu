@@ -7,25 +7,29 @@ std::default_random_engine generator(114514);
 template <int BLOCK_SIZE>
 __global__ void sum_kernel(float *input, int length, float *output)
 {
-    int tid = threadIdx.x;
-
+    int offset = 2 * blockIdx.x * blockDim.x;
+    int local_idx = threadIdx.x;
+    int idx = offset + local_idx;
     __shared__ float sums[BLOCK_SIZE];
 
-    // Store all the local results to shared memory
-    sums[tid] = input[tid] + input[tid + BLOCK_SIZE];
+    // Store the pair sum to shared memory
+    int own_value = idx < length ? input[idx] : 0.0f;
+    int partner_idx = idx + BLOCK_SIZE;
+    int partner_value = partner_idx < length ? input[partner_idx] : 0.0f;
+    sums[local_idx] = own_value + partner_value;
 
     for (int stride = BLOCK_SIZE / 2; stride > 0; stride /= 2)
     {
         __syncthreads();
-        if (tid < stride)
+        if (local_idx < stride)
         {
-            sums[tid] = sums[tid] + sums[tid + stride];
+            sums[local_idx] += sums[local_idx + stride];
         }
     }
 
-    if (tid == 0)
+    if (local_idx == 0)
     {
-        *output = sums[0];
+        atomicAdd(output, sums[0]);
     }
 }
 
@@ -34,7 +38,7 @@ void sum(float *input, int length, float *output)
     constexpr int BLOCK_SIZE = 1024;
 
     dim3 blockDim(BLOCK_SIZE);
-    dim3 gridDim(1);
+    dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE));
     sum_kernel<BLOCK_SIZE><<<gridDim, blockDim>>>(input, length, output);
     CHECK_LAST_CUDA_ERROR();
 }
@@ -53,7 +57,7 @@ float initialize_data(float *input, int length)
 
 int main()
 {
-    constexpr int length = 2048;
+    constexpr int length = 1024 * 1024 * 2;
     constexpr int num_repeats = 8;
 
     // Alloate and initialize data on host
