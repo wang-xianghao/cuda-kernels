@@ -5,15 +5,14 @@
 std::default_random_engine generator(114514);
 
 template <int WARP_SIZE>
-__device__ void warp_sum(volatile float *sums)
+__device__ float warp_sum(float val)
 {
-    int tid = threadIdx.x;
-    sums[tid] += sums[tid + 32];
-    sums[tid] += sums[tid + 16];
-    sums[tid] += sums[tid + 8];
-    sums[tid] += sums[tid + 4];
-    sums[tid] += sums[tid + 2];
-    sums[tid] += sums[tid + 1];
+    for (int stride = WARP_SIZE / 2; stride >= 1; stride /= 2)
+    {
+        val += __shfl_down_sync(0xffffffff, val, stride);
+    }
+
+    return val;
 }
 
 template <int BLOCK_SIZE, int COARSE_FACTOR, int WARP_SIZE>
@@ -32,7 +31,7 @@ __global__ void sum_kernel(float *input, int length, float *output)
     }
     sums[local_idx] = sum;
 
-    for (int stride = BLOCK_SIZE / 2; stride > WARP_SIZE; stride /= 2)
+    for (int stride = BLOCK_SIZE / 2; stride >= WARP_SIZE; stride /= 2)
     {
         __syncthreads();
         if (local_idx < stride)
@@ -44,12 +43,13 @@ __global__ void sum_kernel(float *input, int length, float *output)
     __syncthreads();
     if (local_idx < WARP_SIZE)
     {
-        warp_sum<WARP_SIZE>(sums);
+        sum = sums[local_idx];
+        sum = warp_sum<WARP_SIZE>(sum);
     }
 
     if (local_idx == 0)
     {
-        atomicAdd(output, sums[0]);
+        atomicAdd(output, sum);
     }
 }
 
