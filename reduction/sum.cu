@@ -4,7 +4,19 @@
 
 std::default_random_engine generator(114514);
 
-template <int BLOCK_SIZE, int COARSE_FACTOR>
+template <int WARP_SIZE>
+__device__ void warp_sum(volatile float *sums)
+{
+    int tid = threadIdx.x;
+    sums[tid] += sums[tid + 32];
+    sums[tid] += sums[tid + 16];
+    sums[tid] += sums[tid + 8];
+    sums[tid] += sums[tid + 4];
+    sums[tid] += sums[tid + 2];
+    sums[tid] += sums[tid + 1];
+}
+
+template <int BLOCK_SIZE, int COARSE_FACTOR, int WARP_SIZE>
 __global__ void sum_kernel(float *input, int length, float *output)
 {
     int offset = COARSE_FACTOR * blockIdx.x * blockDim.x;
@@ -20,13 +32,19 @@ __global__ void sum_kernel(float *input, int length, float *output)
     }
     sums[local_idx] = sum;
 
-    for (int stride = BLOCK_SIZE / 2; stride > 0; stride /= 2)
+    for (int stride = BLOCK_SIZE / 2; stride > WARP_SIZE; stride /= 2)
     {
         __syncthreads();
         if (local_idx < stride)
         {
             sums[local_idx] += sums[local_idx + stride];
         }
+    }
+
+    __syncthreads();
+    if (local_idx < WARP_SIZE)
+    {
+        warp_sum<WARP_SIZE>(sums);
     }
 
     if (local_idx == 0)
@@ -39,10 +57,11 @@ void sum(float *input, int length, float *output)
 {
     constexpr int BLOCK_SIZE = 1024;
     constexpr int COARSE_FACTOR = 8;
+    constexpr int WARP_SIZE = 32;
 
     dim3 blockDim(BLOCK_SIZE);
     dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE * COARSE_FACTOR));
-    sum_kernel<BLOCK_SIZE, COARSE_FACTOR><<<gridDim, blockDim>>>(input, length, output);
+    sum_kernel<BLOCK_SIZE, COARSE_FACTOR, WARP_SIZE><<<gridDim, blockDim>>>(input, length, output);
     CHECK_LAST_CUDA_ERROR();
 }
 
