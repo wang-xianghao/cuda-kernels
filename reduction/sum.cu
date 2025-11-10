@@ -38,7 +38,7 @@ __global__ void sum_kernel(float *input, int length, float *output)
 void sum(float *input, int length, float *output)
 {
     constexpr int BLOCK_SIZE = 1024;
-    constexpr int COARSE_FACTOR = 128;
+    constexpr int COARSE_FACTOR = 8;
 
     dim3 blockDim(BLOCK_SIZE);
     dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE * COARSE_FACTOR));
