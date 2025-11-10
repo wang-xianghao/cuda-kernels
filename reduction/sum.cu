@@ -14,7 +14,7 @@ __global__ void sum_kernel(float *input, int length, float *output)
 
     // Store local reduction result into the shared memory
     float sum = idx < length ? input[idx] : 0.0f;
-    for (int i = idx + BLOCK_SIZE; i < min(idx + COARSE_FACTOR * BLOCK_SIZE, length); i += BLOCK_SIZE)
+    for (int i = idx + BLOCK_SIZE; i < min(offset + COARSE_FACTOR * BLOCK_SIZE, length); i += BLOCK_SIZE)
     {
         sum += input[i];
     }
@@ -68,12 +68,14 @@ int main()
     CHECK_CUDA_ERROR(cudaMallocHost(&input_host, length * sizeof(float)));
     CHECK_CUDA_ERROR(cudaMallocHost(&output_host, 1 * sizeof(float)));
     output_ref_host = initialize_data(input_host, length);
+    *output_host = 0.0f;
 
     // Allocate and copy to device
     float *input_device, *output_device;
     CHECK_CUDA_ERROR(cudaMalloc(&input_device, length * sizeof(float)));
     CHECK_CUDA_ERROR(cudaMalloc(&output_device, 1 * sizeof(float)));
     CHECK_CUDA_ERROR(cudaMemcpy(input_device, input_host, length * sizeof(float), cudaMemcpyHostToDevice));
+    CHECK_CUDA_ERROR(cudaMemcpy(output_device, output_host, 1 * sizeof(float), cudaMemcpyHostToDevice));
 
     // Run and check results
     sum(input_device, length, output_device);
