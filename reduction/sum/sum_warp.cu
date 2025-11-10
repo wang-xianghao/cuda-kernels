@@ -4,20 +4,52 @@
 
 std::default_random_engine generator(114514);
 
-template <int BLOCK_SIZE, int COARSE_FACTOR, int WARP_SIZE>
+template <int BLOCK_SIZE, int WARP_SIZE>
 __global__ void sum_kernel(float *input, int length, float *output)
 {
+    int tid = threadIdx.x;
+    int idx = blockIdx.x * blockDim.x + tid;
+    int warp_id = tid / WARP_SIZE;
+    int lane_id = tid % WARP_SIZE;
+
+    __shared__ float input_s[BLOCK_SIZE / WARP_SIZE];
+    float val = idx < length ? input[idx] : 0.0f;
+
+    // Phase 1
+    for (int stride = WARP_SIZE / 2; stride >= 1; stride /= 2)
+    {
+        val += __shfl_down_sync(0xffffffff, val, stride);
+    }
+    if (lane_id == 0)
+    {
+        input_s[warp_id] = val;
+    }
+    __syncthreads();
+
+    // Phase 2
+    if (warp_id == 0)
+    {
+        val = lane_id < BLOCK_SIZE / WARP_SIZE ? input_s[lane_id] : 0.0f;
+        for (int stride = WARP_SIZE / 2; stride >= 1; stride /= 2)
+        {
+            val += __shfl_down_sync(0xffffffff, val, stride);
+        }
+
+        if (lane_id == 0)
+        {
+            atomicAdd(output, val);
+        }
+    }
 }
 
 void sum(float *input, int length, float *output)
 {
     constexpr int BLOCK_SIZE = 1024;
-    constexpr int COARSE_FACTOR = 8;
     constexpr int WARP_SIZE = 32;
 
     dim3 blockDim(BLOCK_SIZE);
-    dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE * COARSE_FACTOR));
-    sum_kernel<BLOCK_SIZE, COARSE_FACTOR, WARP_SIZE><<<gridDim, blockDim>>>(input, length, output);
+    dim3 gridDim(CEIL_DIV(length, BLOCK_SIZE));
+    sum_kernel<BLOCK_SIZE, WARP_SIZE><<<gridDim, blockDim>>>(input, length, output);
     CHECK_LAST_CUDA_ERROR();
 }
 
