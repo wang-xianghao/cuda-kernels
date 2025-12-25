@@ -5,6 +5,7 @@
 #include <functional>
 #include <iostream>
 #include <vector>
+#include <numeric>
 
 #define CEIL_DIV(a, b) (((a) + (b) - 1) / (b))
 
